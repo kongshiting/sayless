@@ -1,6 +1,6 @@
 from keyword_phrases import extract_key_phrases
 
-tests = ["why is everything a subscription now I just wanted to open a fire do you want a relationship why do I need to start a free trial to rotate a PDF and why is my calculator asking me to update to a pro what extra features does a calculator even have negative numbers we have a payroll and don't get me started on meetings meetings"
+tests = ["So today was really tiring. I woke up late and missed my alarm, so I had to rush to get ready. Then I realized I forgot my keys and had to run back home. It was raining too which made everything worse. By the time I reached the office I was completely stressed and exhausted."
 ]
 for t in tests:
     print("\nINPUT:", t)
