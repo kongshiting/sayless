@@ -113,6 +113,93 @@ MAX_DURATION = 5.0
 TARGET_CLIP_LENGTH_MS = 2000
 SILENCE_MS = 120
 
+# ==================
+# CUSTOM SOUND POOLS
+# ==================
+# Format: "pool_name": ["path/to/sound1.mp3", "path/to/sound2.mp3", ...]
+# The script will randomly pick one sound from the pool
+
+SOUND_POOLS = {
+    # Swear words pool - all swear words share these sounds
+    "swear_words": [
+        "custom_sounds/censor.mp3",
+        "custom_sounds/Wah cb.mp3",
+        "custom_sounds/Wah cb_2.mp3",
+        "custom_sounds/Prostitute.mp3"
+    ],
+    
+    # Surprise/shock pool
+    "surprise": [
+        "custom_sounds/OMG.mp3"
+    ],
+    
+    # Dog sound pool
+    "dog": [
+        "custom_sounds/Bark.mp3",
+        "custom_sounds/Dog growl.mp3",
+        "custom_sounds/High Pitched Woof.mp3",
+        "custom_sounds/Loud Woof.mp3",
+        "custom_sounds/Many Woofs.mp3"
+    ],
+
+    "cat": [
+        "custom_sounds/High Pitch Meow.mp3",
+        "custom_sounds/Low Meow.mp3",
+        "custom_sounds/Meow_2.mp3",
+        "custom_sounds/meow.mp3"
+    ],
+}
+
+
+# ============================================================
+# KEYWORD TO POOL MAPPING - MAP WORDS TO POOLS
+# ============================================================
+# Format: "keyword": "pool_name"
+# Multiple keywords can map to the same pool
+
+KEYWORD_TO_POOL = {
+    # Swear words - all map to "swear_words" pool
+    "fuck": "swear_words",
+    "fucking": "swear_words",
+    "fucked": "swear_words",
+    "shit": "swear_words",
+    "damn": "swear_words",
+    "ass": "swear_words",
+    "bitch": "swear_words",
+    "hell": "swear_words",
+    "chibai": "swear_words",
+    "cheebye": "swear_words",
+    
+    # Surprise - all map to "surprise" pool
+    "shocked": "surprise",
+    "surprised": "surprise",
+    "unexpected": "surprise",
+    "omg": "surprise",
+    
+    # Cat - all map to "cat" pool
+    "cat": "cat",
+    "meow": "cat",
+    "meowed": "cat",
+    "cats": "cat",
+    "feline": "cat",
+    "meowing": "cat",
+    "kitten": "cat",
+    "kitty": "cat",
+
+    # Dog - all map to "dog" pool
+    "dog": "dog",
+    "woof": "dog",
+    "dogs": "dog",
+    "doggo": "dog",
+    "doge": "dog",
+    "woofed": "dog",
+    "woofing": "dog",
+    "bark": "dog",
+    "barking": "dog",
+    "barked": "dog",
+    "puppy": "dog",
+}
+
 
 def normalize_keyword(keyword):
     """Convert extracted keyword to optimized search term"""
@@ -251,8 +338,67 @@ def process_sound(filepath):
         return None
 
 
+def load_custom_sound(keyword):
+    """Load a custom sound file from a pool for specific keywords"""
+    keyword_lower = keyword.lower().strip()
+    
+    # Check if this keyword maps to a sound pool
+    if keyword_lower not in KEYWORD_TO_POOL:
+        return None
+    
+    pool_name = KEYWORD_TO_POOL[keyword_lower]
+    
+    # Check if the pool exists
+    if pool_name not in SOUND_POOLS:
+        print(f"[WARN] Pool '{pool_name}' not found for keyword '{keyword}'")
+        return None
+    
+    sound_files = SOUND_POOLS[pool_name]
+    
+    # Filter to only files that exist
+    available_files = [f for f in sound_files if os.path.exists(f)]
+    
+    if not available_files:
+        print(f"[WARN] No custom sound files found in pool '{pool_name}' for '{keyword}'")
+        print(f"[WARN] Looking for files:")
+        for f in sound_files:
+            print(f"  - {f} (exists: {os.path.exists(f)})")
+        return None
+    
+    # Randomly pick one from the pool
+    chosen_file = random.choice(available_files)
+    print(f"[INFO] Using custom sound from '{pool_name}' pool: {os.path.basename(chosen_file)}")
+    
+    try:
+        audio = AudioSegment.from_file(chosen_file)
+        
+        # Trim to target length
+        if len(audio) > TARGET_CLIP_LENGTH_MS:
+            audio = audio[:TARGET_CLIP_LENGTH_MS]
+        
+        # Normalize volume
+        audio = normalize(audio)
+        
+        return audio
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to load custom sound {chosen_file}: {e}")
+        return None
+
+
 def keyword_to_audio(keyword):
-    """Convert keyword to audio clip"""
+    """Convert keyword to audio clip - checks custom sound pools first"""
+    keyword_lower = keyword.lower().strip()
+    
+    # Check if this keyword maps to a custom sound pool
+    if keyword_lower in KEYWORD_TO_POOL:
+        custom_audio = load_custom_sound(keyword_lower)
+        if custom_audio:
+            return custom_audio
+        # If custom sound failed, fall through to regular search
+        print(f"[INFO] Custom sound failed, falling back to Freesound search for '{keyword}'")
+    
+    # Regular Freesound search
     sounds = search_freesound(keyword)
     
     if not sounds:
@@ -303,12 +449,47 @@ def transcript_to_soundbite(transcript: str, output_file: str = "soundbite.ogg",
         print("=" * 60)
         return None
     
-    # Extract keywords from transcript
+    # Extract regular keywords from transcript
     print("\n" + "=" * 60)
     print("EXTRACTING KEYWORDS FROM TRANSCRIPT")
     print("=" * 60)
     keywords = extract_key_phrases(transcript, max_k=max_keywords)
-    print(f"[INFO] Extracted keywords: {keywords}")
+    
+    print(f"[INFO] Raw extracted keywords: {keywords}")
+    
+    # Process keywords to handle custom sounds
+    processed_keywords = []
+    custom_words_found = []
+    
+    for keyword in keywords:
+        # Check if this keyword contains any custom-mapped words
+        keyword_lower = keyword.lower()
+        keyword_words = keyword_lower.split()
+        
+        has_custom = False
+        custom_in_phrase = []
+        
+        # Check each word in the keyword phrase
+        for word in keyword_words:
+            if word in KEYWORD_TO_POOL:
+                has_custom = True
+                custom_in_phrase.append(word)
+        
+        if has_custom:
+            # Add only the custom words (not the full phrase)
+            for custom_word in custom_in_phrase:
+                if custom_word not in processed_keywords:
+                    processed_keywords.append(custom_word)
+                    custom_words_found.append(custom_word)
+        else:
+            # No custom words - add the full phrase
+            processed_keywords.append(keyword)
+    
+    print(f"[INFO] Processed keywords: {processed_keywords}")
+    if custom_words_found:
+        custom_pools = {KEYWORD_TO_POOL.get(kw, "unknown") for kw in custom_words_found}
+        print(f"[INFO] Detected custom keywords: {custom_words_found}")
+        print(f"[INFO] Using sound pools: {custom_pools}")
     
     # Build soundbite
     print("\n" + "=" * 60)
@@ -318,7 +499,7 @@ def transcript_to_soundbite(transcript: str, output_file: str = "soundbite.ogg",
     final_audio = AudioSegment.silent(duration=0)
     successful_clips = 0
 
-    for keyword in keywords:
+    for keyword in processed_keywords:
         print(f"\n--- Processing: '{keyword}' ---")
         
         clip = keyword_to_audio(keyword)
@@ -342,19 +523,16 @@ def transcript_to_soundbite(transcript: str, output_file: str = "soundbite.ogg",
     print("\n" + "=" * 60)
     print(f"[OK] Soundbite created: {output_file}")
     print(f"[INFO] Duration: {len(final_audio)/1000:.2f}s")
-    print(f"[INFO] Clips used: {successful_clips}/{len(keywords)}")
+    print(f"[INFO] Clips used: {successful_clips}/{len(processed_keywords)}")
     print("=" * 60)
     
     return output_file
 
 
 if __name__ == "__main__":
-    # Example usage
+    # Example usage with custom sound pools
     sample_transcript = """
-    So today was really tiring. I woke up late and missed my alarm, 
-    so I had to rush to get ready. Then I realized I forgot my keys 
-    and had to run back home. It was raining too which made everything worse. 
-    By the time I reached the office I was completely stressed and exhausted.
+    dog cat woof fuck omg bark cb chi bai meow bark
     """
     
-    transcript_to_soundbite(sample_transcript, output_file="my_day.ogg", max_keywords=8)
+    transcript_to_soundbite(sample_transcript, output_file="my_day.ogg", max_keywords=15)
